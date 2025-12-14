@@ -1,4 +1,5 @@
--- CLIENT SIDE COMBAT SCRIPT
+-- client slide 
+-- check github for server side 
 
 -- Services
 local UserInputService = game:GetService("UserInputService")
@@ -6,27 +7,27 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
--- Cooldowns & animation fade
+-- Cooldowns and fade
 local LIGHT_ATTACK_COOLDOWN = 0.5
 local HEAVY_ATTACK_COOLDOWN = 1.2
 local FADE_TIME = 0.15
 
--- Movement values
+-- Movement
 local NORMAL_SPEED = 16
 local SPRINT_SPEED = 25
 local NORMAL_FOV = 70
 local SPRINT_FOV = 80
 
--- Player references
+-- references
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
--- Character references
+
 local character = nil
 local humanoid = nil
 local animator = nil
 
--- Animation tracks
+-- Animation
 local walkTrack = nil
 local sprintTrack = nil
 local lightAttackTrack = nil
@@ -38,39 +39,39 @@ local heavyAttackReady = true
 local isSprinting = false
 local runningConn = nil
 
--- Shift lock state
+-- Shift lock
 local isShiftLocked = false
 local shiftLockRenderConn = nil
 
--- Stop animation safely
+-- Stop animation
 local function stopTrack(track)
 	if track and track.IsPlaying then
 		track:Stop(FADE_TIME)
 	end
 end
 
--- Play animation safely
+-- Play animation
 local function playTrack(track)
 	if track and not track.IsPlaying then
 		track:Play(FADE_TIME)
 	end
 end
 
--- Apply normal movement
+
 local function applyWalkStats()
 	if not humanoid then return end
 	humanoid.WalkSpeed = NORMAL_SPEED
 	camera.FieldOfView = NORMAL_FOV
 end
 
--- Apply sprint movement
+-- Apply sprint 
 local function applySprintStats()
 	if not humanoid then return end
 	humanoid.WalkSpeed = SPRINT_SPEED
 	camera.FieldOfView = SPRINT_FOV
 end
 
--- Enable custom shift lock
+-- Enable shift lock
 local function enableShiftLock()
 	if not humanoid or not character then return end
 	isShiftLocked = true
@@ -85,7 +86,7 @@ local function enableShiftLock()
 		shiftLockRenderConn:Disconnect()
 	end
 
-	-- Rotate character with camera
+	
 	shiftLockRenderConn = RunService.RenderStepped:Connect(function()
 		if not isShiftLocked then return end
 		if not root or not camera then return end
@@ -97,7 +98,7 @@ local function enableShiftLock()
 	end)
 end
 
--- Disable shift lock
+
 local function disableShiftLock()
 	isShiftLocked = false
 
@@ -114,7 +115,7 @@ local function disableShiftLock()
 	UserInputService.MouseBehavior = Enum.MouseBehavior.Default
 end
 
--- Toggle shift lock
+
 local function toggleShiftLock()
 	if isShiftLocked then
 		disableShiftLock()
@@ -175,7 +176,7 @@ local function setupCharacter(char)
 	heavyAttackTrack.Priority = Enum.AnimationPriority.Action
 	heavyAttackTrack.Looped = false
 
-	-- Reset states
+	-- Reset 
 	isSprinting = false
 	lightAttackReady = true
 	heavyAttackReady = true
@@ -192,7 +193,7 @@ local function setupCharacter(char)
 		runningConn:Disconnect()
 	end
 
-	-- Handle movement animation switching
+	-- movement animation switching
 	runningConn = humanoid.Running:Connect(function(speed)
 		if speed <= 0.1 then
 			stopTrack(walkTrack)
@@ -210,7 +211,7 @@ local function setupCharacter(char)
 	end)
 end
 
--- Initial character setup
+-- character setup
 setupCharacter(player.Character or player.CharacterAdded:Wait())
 player.CharacterAdded:Connect(setupCharacter)
 
