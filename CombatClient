@@ -1,190 +1,106 @@
---[[
-	PORTFOLIO COMBAT SYSTEM - CLIENT
-	
-	This script handles all CLIENT-SIDE combat input and animation playback.
-	
-	Architecture:
-	- Client only handles input intent and visual feedback (animations)
-	- All hit detection, validation, and damage happens on the server
-	- Communicates with server via RemoteEvent
-	
-	Features:
-	- Light Attack (MouseButton1): Fast, less damage
-	- Heavy Attack (MouseButton2): Slow, more damage
-	- Action-priority animations (overlap movement animations)
-	- Cooldown system (prevents spam, respects animation length)
-	- Works alongside existing sprint/movement system
---]]
+- -CLIENT SIDE combat
 
--- ============================================================================
--- SERVICES
--- ============================================================================
+
+
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
--- ============================================================================
--- CONSTANTS - COMBAT
--- ============================================================================
--- Attack cooldowns (in seconds) - Heavy is slower than light
-local LIGHT_ATTACK_COOLDOWN = 0.5  -- Light attacks are fast
-local HEAVY_ATTACK_COOLDOWN = 1.2  -- Heavy attacks are slow and powerful
-
--- Animation fade time for smooth transitions
+local LIGHT_ATTACK_COOLDOWN = 0.5
+local HEAVY_ATTACK_COOLDOWN = 1.2
 local FADE_TIME = 0.15
 
--- ============================================================================
--- CONSTANTS - MOVEMENT (existing system)
--- ============================================================================
 local NORMAL_SPEED = 16
 local SPRINT_SPEED = 25
 local NORMAL_FOV = 70
 local SPRINT_FOV = 80
 
--- ============================================================================
--- STATE - PLAYER REFERENCES
--- ============================================================================
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
--- Character references (set in setupCharacter)
 local character = nil
 local humanoid = nil
 local animator = nil
 
--- ============================================================================
--- STATE - ANIMATION TRACKS
--- ============================================================================
--- Movement animations (existing)
 local walkTrack = nil
 local sprintTrack = nil
-
--- Combat animations
 local lightAttackTrack = nil
 local heavyAttackTrack = nil
 
--- ============================================================================
--- STATE - COOLDOWNS
--- ============================================================================
--- Track if attacks are on cooldown
 local lightAttackReady = true
 local heavyAttackReady = true
-
--- ============================================================================
--- STATE - MOVEMENT (existing)
--- ============================================================================
 local isSprinting = false
 local runningConn = nil
 
--- ============================================================================
--- STATE - SHIFT LOCK
--- ============================================================================
 local isShiftLocked = false
 local shiftLockRenderConn = nil
 
--- ============================================================================
--- ANIMATION HELPERS (existing system)
--- ============================================================================
-
--- Stop an animation track with fade
 local function stopTrack(track)
 	if track and track.IsPlaying then
 		track:Stop(FADE_TIME)
 	end
 end
 
--- Play an animation track with fade
 local function playTrack(track)
 	if track and not track.IsPlaying then
 		track:Play(FADE_TIME)
 	end
 end
 
--- ============================================================================
--- MOVEMENT HELPERS (existing system)
--- ============================================================================
-
--- Apply normal walk speed and FOV
 local function applyWalkStats()
 	if not humanoid then return end
 	humanoid.WalkSpeed = NORMAL_SPEED
 	camera.FieldOfView = NORMAL_FOV
 end
 
--- Apply sprint speed and FOV
 local function applySprintStats()
 	if not humanoid then return end
 	humanoid.WalkSpeed = SPRINT_SPEED
 	camera.FieldOfView = SPRINT_FOV
 end
 
--- ============================================================================
--- SHIFT LOCK SYSTEM
--- ============================================================================
-
---[[
-	Enables custom shift lock
-	- Locks mouse to center
-	- Offsets camera to shoulder view
-	- Character rotates with camera horizontally
-	- Allows vertical look (up/down)
---]]
 local function enableShiftLock()
 	if not humanoid or not character then return end
-	
 	isShiftLocked = true
-	
+
 	local root = character:FindFirstChild("HumanoidRootPart")
 	if not root then return end
-	
+
 	humanoid.CameraOffset = Vector3.new(1.75, 0, 0)
 	humanoid.AutoRotate = false
-	
+
 	if shiftLockRenderConn then
 		shiftLockRenderConn:Disconnect()
 	end
-	
-	shiftLockRenderConn = game:GetService("RunService").RenderStepped:Connect(function()
+
+	shiftLockRenderConn = RunService.RenderStepped:Connect(function()
 		if not isShiftLocked then return end
 		if not root or not camera then return end
-		
+
 		UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
-		
-		local cameraCFrame = camera.CFrame
-		local lookVector = cameraCFrame.LookVector
-		local rightVector = cameraCFrame.RightVector
-		
+		local lookVector = camera.CFrame.LookVector
 		local horizontalLook = Vector3.new(lookVector.X, 0, lookVector.Z).Unit
-		
 		root.CFrame = CFrame.new(root.Position, root.Position + horizontalLook)
 	end)
 end
 
---[[
-	Disables custom shift lock
-	- Unlocks mouse
-	- Resets camera offset
-	- Re-enables auto rotation
---]]
 local function disableShiftLock()
 	isShiftLocked = false
-	
+
 	if shiftLockRenderConn then
 		shiftLockRenderConn:Disconnect()
 		shiftLockRenderConn = nil
 	end
-	
+
 	if humanoid then
 		humanoid.CameraOffset = Vector3.new(0, 0, 0)
 		humanoid.AutoRotate = true
 	end
-	
+
 	UserInputService.MouseBehavior = Enum.MouseBehavior.Default
 end
 
---[[
-	Toggles shift lock on/off
---]]
 local function toggleShiftLock()
 	if isShiftLocked then
 		disableShiftLock()
@@ -193,144 +109,76 @@ local function toggleShiftLock()
 	end
 end
 
--- ============================================================================
--- COMBAT FUNCTIONS
--- ============================================================================
-
---[[
-	Performs a light attack
-	- Fast cooldown
-	- Plays light attack animation
-	- Fires event to server for hit detection
---]]
 local function performLightAttack()
-	-- Check if attack is ready (not on cooldown)
-	if not lightAttackReady then return end
-	if not lightAttackTrack then return end
-	
-	-- Put attack on cooldown
+	if not lightAttackReady or not lightAttackTrack then return end
 	lightAttackReady = false
-	
-	-- Play animation (Action priority = overlaps movement)
 	lightAttackTrack:Play(FADE_TIME)
-	
-	-- Tell server to check for hits
+
 	local combatEvent = ReplicatedStorage:WaitForChild("CombatEvent")
 	combatEvent:FireServer("light")
-	
-	-- Wait for cooldown, then allow next attack
+
 	task.wait(LIGHT_ATTACK_COOLDOWN)
 	lightAttackReady = true
 end
 
---[[
-	Performs a heavy attack
-	- Slow cooldown
-	- Plays heavy attack animation
-	- Fires event to server for hit detection (more damage)
---]]
 local function performHeavyAttack()
-	-- Check if attack is ready (not on cooldown)
-	if not heavyAttackReady then return end
-	if not heavyAttackTrack then return end
-	
-	-- Put attack on cooldown
+	if not heavyAttackReady or not heavyAttackTrack then return end
 	heavyAttackReady = false
-	
-	-- Play animation (Action priority = overlaps movement)
 	heavyAttackTrack:Play(FADE_TIME)
-	
-	-- Tell server to check for hits (heavy does more damage)
+
 	local combatEvent = ReplicatedStorage:WaitForChild("CombatEvent")
 	combatEvent:FireServer("heavy")
-	
-	-- Wait for cooldown, then allow next attack
+
 	task.wait(HEAVY_ATTACK_COOLDOWN)
 	heavyAttackReady = true
 end
 
--- ============================================================================
--- CHARACTER SETUP
--- ============================================================================
-
---[[
-	Sets up character references and loads all animations
-	Called on spawn and respawn
---]]
 local function setupCharacter(char)
-	-- Store character references
 	character = char
 	humanoid = character:WaitForChild("Humanoid")
 	animator = humanoid:WaitForChild("Animator")
-	
-	-- Get animation folder from ReplicatedStorage
+
 	local animFolder = ReplicatedStorage:WaitForChild("Animations")
-	
-	-- ========================================================================
-	-- LOAD MOVEMENT ANIMATIONS (existing system)
-	-- ========================================================================
-	local walkAnim = animFolder:WaitForChild("Walking")
-	local sprintAnim = animFolder:WaitForChild("Sprint")
-	
-	walkTrack = animator:LoadAnimation(walkAnim)
+
+	walkTrack = animator:LoadAnimation(animFolder:WaitForChild("Walking"))
 	walkTrack.Priority = Enum.AnimationPriority.Movement
 	walkTrack.Looped = true
-	
-	sprintTrack = animator:LoadAnimation(sprintAnim)
+
+	sprintTrack = animator:LoadAnimation(animFolder:WaitForChild("Sprint"))
 	sprintTrack.Priority = Enum.AnimationPriority.Action
 	sprintTrack.Looped = true
-	
-	-- ========================================================================
-	-- LOAD COMBAT ANIMATIONS
-	-- ========================================================================
-	-- Light attack animation (uses existing "Punch" animation)
-	local lightAnim = animFolder:WaitForChild("Punch")
-	lightAttackTrack = animator:LoadAnimation(lightAnim)
-	lightAttackTrack.Priority = Enum.AnimationPriority.Action  -- Overlaps movement
+
+	lightAttackTrack = animator:LoadAnimation(animFolder:WaitForChild("Punch"))
+	lightAttackTrack.Priority = Enum.AnimationPriority.Action
 	lightAttackTrack.Looped = false
-	
-	-- Heavy attack animation (uses existing "Punch" animation for now)
-	-- TODO: Replace with actual heavy attack animation when available
-	local heavyAnim = animFolder:WaitForChild("Punch")
-	heavyAttackTrack = animator:LoadAnimation(heavyAnim)
-	heavyAttackTrack.Priority = Enum.AnimationPriority.Action  -- Overlaps movement
+
+	heavyAttackTrack = animator:LoadAnimation(animFolder:WaitForChild("Punch"))
+	heavyAttackTrack.Priority = Enum.AnimationPriority.Action
 	heavyAttackTrack.Looped = false
-	
-	-- ========================================================================
-	-- RESET STATE
-	-- ========================================================================
+
 	isSprinting = false
 	lightAttackReady = true
 	heavyAttackReady = true
+
 	applyWalkStats()
 	stopTrack(walkTrack)
 	stopTrack(sprintTrack)
-	
+
 	if isShiftLocked then
 		disableShiftLock()
 	end
-	
-	-- ========================================================================
-	-- MOVEMENT SYSTEM (existing)
-	-- ========================================================================
-	-- Disconnect old Running connection to prevent memory leaks on respawn
+
 	if runningConn then
 		runningConn:Disconnect()
-		runningConn = nil
 	end
-	
-	-- Drive walk/sprint animations based on actual movement speed
+
 	runningConn = humanoid.Running:Connect(function(speed)
-		local moving = speed > 0.1
-		
-		if not moving then
-			-- Not moving: stop both animations
+		if speed <= 0.1 then
 			stopTrack(walkTrack)
 			stopTrack(sprintTrack)
 			return
 		end
-		
-		-- Moving: play appropriate animation
+
 		if isSprinting then
 			stopTrack(walkTrack)
 			playTrack(sprintTrack)
@@ -341,431 +189,30 @@ local function setupCharacter(char)
 	end)
 end
 
--- ============================================================================
--- INITIALIZE CHARACTER
--- ============================================================================
--- Setup for initial spawn
 setupCharacter(player.Character or player.CharacterAdded:Wait())
-
--- Setup for all future respawns
 player.CharacterAdded:Connect(setupCharacter)
 
--- ============================================================================
--- INPUT HANDLING - MOVEMENT (existing system)
--- ============================================================================
-
--- Sprint start (LeftShift pressed)
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then return end  -- Ignore if typing in chat, etc.
-	
+	if gameProcessed then return end
+
 	if input.KeyCode == Enum.KeyCode.LeftShift then
 		isSprinting = true
 		applySprintStats()
-		
-		-- Switch to sprint animation immediately if moving
 		stopTrack(walkTrack)
 		playTrack(sprintTrack)
-	end
-end)
-
--- Sprint end (LeftShift released)
-UserInputService.InputEnded:Connect(function(input)
-	if input.KeyCode == Enum.KeyCode.LeftShift then
-		isSprinting = false
-		applyWalkStats()
-		
-		-- Let Running event decide if walk should play
-		stopTrack(sprintTrack)
-	end
-end)
-
--- ============================================================================
--- INPUT HANDLING - SHIFT LOCK
--- ============================================================================
-
---[[
-	Shift Lock Toggle: LeftControl (Left Ctrl)
-	- Press to toggle shoulder camera and mouse lock
---]]
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then return end
-	
-	if input.KeyCode == Enum.KeyCode.LeftControl then
+	elseif input.KeyCode == Enum.KeyCode.LeftControl then
 		toggleShiftLock()
-	end
-end)
-
--- ============================================================================
--- INPUT HANDLING - COMBAT
--- ============================================================================
-
---[[
-	Light Attack: MouseButton1 (Left Click)
-	- Fast attack with short cooldown
-	- Lower damage
---]]
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then return end  -- Ignore if clicking UI, etc.
-	
-	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+	elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
 		performLightAttack()
-	end
-end)
-
---[[
-	Heavy Attack: MouseButton2 (Right Click)
-	- Slow attack with long cooldown
-	- Higher damage
---]]
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then return end  -- Ignore if clicking UI, etc.
-	
-	if input.UserInputType == Enum.UserInputType.MouseButton2 then
+	elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
 		performHeavyAttack()
 	end
 end)
 
--- ============================================================================
--- COMMENTED FEATURES (for future expansion)
--- ============================================================================
-
---[[
-	============================================================================
-	2-3 HIT COMBO SYSTEM
-	============================================================================
-	
-	This system tracks rapid light attacks and triggers a special combo finisher
-	on the 3rd consecutive hit within a time window.
-	
-	Features:
-	- Tracks consecutive light attacks (MouseButton1)
-	- Combo window: 1 second between hits
-	- On 3rd hit: plays special combo animation and deals bonus damage
-	- Server validates combo and applies extra knockback
-	- Visual feedback: combo counter UI (optional)
-	
-	To enable: Uncomment the entire section below
---]]
---[[
--- ============================================================================
--- COMBO STATE
--- ============================================================================
-local comboCount = 0              -- Current combo chain (0-2, resets to 0 after finisher)
-local comboWindow = 1.0           -- Time window to continue combo (seconds)
-local lastComboHitTime = 0        -- Last time a combo hit landed
-local COMBO_FINISHER_COOLDOWN = 0.8  -- Cooldown after combo finisher
-
--- Animation track for combo finisher
-local comboFinisherTrack = nil
-
--- ============================================================================
--- COMBO FUNCTIONS
--- ============================================================================
-
---[[
-	Advances the combo chain
-	Called on each successful light attack
---]]
-
-
---[[local function advanceCombo()
-	local currentTime = tick()
-	
-	-- Check if we're within combo window
-	if currentTime - lastComboHitTime <= comboWindow then
-		-- Continue combo chain
-		comboCount = comboCount + 1
-	else
-		-- Combo window expired - restart chain
-		comboCount = 1
-	end
-	
-	-- Update last hit time
-	lastComboHitTime = currentTime
-	
-	-- Check if combo finisher should trigger (3rd hit)
-	if comboCount >= 3 then
-		performComboFinisher()
-		comboCount = 0  -- Reset chain
-	end
---[[end
-
---[[
-	Performs the combo finisher attack (3rd hit)
-	- Plays special animation
-	- Fires combo event to server (extra damage + knockback)
---]]
-
-
-
---[[local function performComboFinisher()
-	if not comboFinisherTrack then return end
-	
-	-- Play combo finisher animation
-	comboFinisherTrack:Play(FADE_TIME)
-	
-	-- Tell server this is a combo finisher
-	local combatEvent = ReplicatedStorage:WaitForChild("CombatEvent")
-	combatEvent:FireServer("combo")  -- Special attack type
-	
-	-- Optional: Play special sound effect
-	-- local comboSound = ReplicatedStorage:FindFirstChild("ComboSound")
-	-- if comboSound then comboSound:Play() end
---[[end
-
-
-
--- ============================================================================
--- COMBO SETUP (in setupCharacter function)
--- ============================================================================
-
---[[
-	Add this to the setupCharacter function to load combo finisher animation:
-	
-	-- Load combo finisher animation
-	local comboAnim = animFolder:WaitForChild("ComboFinisher")  -- Replace with your animation
-	comboFinisherTrack = animator:LoadAnimation(comboAnim)
-	comboFinisherTrack.Priority = Enum.AnimationPriority.Action
-	comboFinisherTrack.Looped = false
---]]
-
--- ============================================================================
--- COMBO INPUT (replace performLightAttack function)
--- ============================================================================
-
---[[
-	Modified light attack function with combo tracking:
-	
-	local function performLightAttack()
-		if not lightAttackReady then return end
-		if not lightAttackTrack then return end
-		
-		lightAttackReady = false
-		
-		-- Advance combo chain
-		advanceCombo()
-		
-		-- Play light attack animation (unless combo finisher triggered)
-		if comboCount < 3 then
-			lightAttackTrack:Play(FADE_TIME)
-			
-			-- Tell server to check for hits
-			local combatEvent = ReplicatedStorage:WaitForChild("CombatEvent")
-			combatEvent:FireServer("light")
-		end
-		
-		task.wait(LIGHT_ATTACK_COOLDOWN)
-		lightAttackReady = true
-	end
---]]
-
---[[
-	SERVER-SIDE COMBO HANDLING (add to CombatHandler script):
-	
-	In the combatEvent.OnServerEvent handler, add:
-	
-	elseif attackType == "combo" then
-		damage = LIGHT_DAMAGE * 2  -- Combo finisher deals double damage
-		range = HEAVY_ATTACK_RANGE  -- Longer range
-		knockbackPower = HEAVY_KNOCKBACK_POWER * 1.5  -- Extra knockback
---]]
---]]
-
---[[
-	============================================================================
-	BLOCK MECHANIC (F KEY)
-	============================================================================
-	
-	This system allows players to block incoming attacks by holding F.
-	
-	Features:
-	- Hold F to enter block stance
-	- Reduces incoming damage by 70% while blocking
-	- Plays block animation (shield up, defensive pose)
-	- Cannot attack while blocking
-	- Server validates block state and applies damage reduction
-	- Optional: Stamina drain while blocking
-	
-	To enable: Uncomment the entire section below
---]]
---[[
--- ============================================================================
--- BLOCK STATE
--- ============================================================================
-local isBlocking = false          -- Is player currently blocking?
-local blockAnimationTrack = nil   -- Block animation track
-
--- ============================================================================
--- BLOCK FUNCTIONS
--- ============================================================================
-
---[[
-	Starts blocking
-	- Plays block animation
-	- Notifies server of block state
-	- Prevents attacks while blocking
---]]
-local function startBlocking()
-	if isBlocking then return end
-	if not blockAnimationTrack then return end
-	
-	isBlocking = true
-	
-	-- Play block animation
-	blockAnimationTrack:Play(FADE_TIME)
-	
-	-- Notify server that we're blocking (for damage reduction)
-	local combatEvent = ReplicatedStorage:WaitForChild("CombatEvent")
-	combatEvent:FireServer("blockStart")
-	
-	print("[Combat] Blocking started")
-end
-
---[[
-	Stops blocking
-	- Stops block animation
-	- Notifies server block ended
-	- Re-enables attacks
---]]
-
-
-
-
---[[[local function stopBlocking()
-	if not isBlocking then return end
-	
-	isBlocking = false
-	
-	-- Stop block animation
-	stopTrack(blockAnimationTrack)
-	
-	-- Notify server that we stopped blocking
-	local combatEvent = ReplicatedStorage:WaitForChild("CombatEvent")
-	combatEvent:FireServer("blockEnd")
-	
-	print("[Combat] Blocking stopped")
---[[end
-
-
-
--- ============================================================================
--- BLOCK SETUP (in setupCharacter function)
--- ============================================================================
-
---[[
-	Add this to the setupCharacter function to load block animation:
-	
-	-- Load block animation
-	local blockAnim = animFolder:WaitForChild("Block")  -- Replace with your animation
-	blockAnimationTrack = animator:LoadAnimation(blockAnim)
-	blockAnimationTrack.Priority = Enum.AnimationPriority.Action
-	blockAnimationTrack.Looped = true  -- Hold pose while blocking
---]]
-
--- ============================================================================
--- BLOCK INPUT (F KEY)
--- ============================================================================
-
---[[
-	F Key Press: Start blocking
---]]
-
-
---[[UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then return end
-	
-	if input.KeyCode == Enum.KeyCode.F then
-		startBlocking()
+UserInputService.InputEnded:Connect(function(input)
+	if input.KeyCode == Enum.KeyCode.LeftShift then
+		isSprinting = false
+		applyWalkStats()
+		stopTrack(sprintTrack)
 	end
 end)
-
---[[
-	F Key Release: Stop blocking
---]]
---[[UserInputService.InputEnded:Connect(function(input)
-	if input.KeyCode == Enum.KeyCode.F then
-		stopBlocking()
-	end
---[[end)
-
-
-
-
--- ============================================================================
--- BLOCK ATTACK PREVENTION (modify attack functions)
--- ============================================================================
-
---[[
-	Modify performLightAttack and performHeavyAttack to check blocking:
-	
-	local function performLightAttack()
-		if isBlocking then return end  -- Can't attack while blocking
-		-- ... rest of function
-	end
-	
-	local function performHeavyAttack()
-		if isBlocking then return end  -- Can't attack while blocking
-		-- ... rest of function
-	end
---]]
-
---[[
-	SERVER-SIDE BLOCK HANDLING (add to CombatHandler script):
-	
-	Track player block state on server:
-	
-	local playerBlockState = {}  -- playerBlockState[player] = true/false
-	
-	In combatEvent.OnServerEvent handler, add:
-	
-	if attackType == "blockStart" then
-		playerBlockState[player] = true
-		return
-	elseif attackType == "blockEnd" then
-		playerBlockState[player] = false
-		return
-	end
-	
-	In hit detection (after finding target), check if target is blocking:
-	
-	if targetHumanoid and targetCharacter then
-		local targetPlayer = game.Players:GetPlayerFromCharacter(targetCharacter)
-		
-		-- Check if target is blocking
-		if targetPlayer and playerBlockState[targetPlayer] then
-			-- Reduce damage by 70% when blocking
-			damage = damage * 0.3
-			print("[CombatHandler]", targetPlayer.Name, "blocked the attack!")
-		end
-		
-		-- Apply damage
-		targetHumanoid:TakeDamage(damage)
-		-- ... rest of hit logic
-	end
---]]
---]]
-
---[[
-	IDLE ANIMATION SYSTEM
-	Uncomment to enable idle animation when standing still
---]]
---[[
-local idleTrack
-
-local function setupIdleAnimation()
-	local animFolder = ReplicatedStorage:WaitForChild("Animations")
-	local idleAnim = animFolder:WaitForChild("Idle")
-	
-	idleTrack = animator:LoadAnimation(idleAnim)
-	idleTrack.Priority = Enum.AnimationPriority.Idle
-	idleTrack.Looped = true
-	
-	humanoid.Running:Connect(function(speed)
-		if speed <= 0.1 then
-			playTrack(idleTrack)
-		else
-			stopTrack(idleTrack)
-		end
-	end)
-end
---]]
