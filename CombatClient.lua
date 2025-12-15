@@ -1,5 +1,4 @@
 -- client slide 
--- check github for server side 
 
 -- Services
 local UserInputService = game:GetService("UserInputService")
