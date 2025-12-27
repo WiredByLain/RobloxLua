@@ -1,9 +1,9 @@
 --[[
 	Advanced Building System
 	
-	This system lets players place building pieces with a live preview.
+	This system is a building system with a live ghost preview before you place your building
     It snaps to a grid, checks collisions, supports rotation, and sends updates to the server.
-    It uses CFrame, raycasts, and tweens to make it all work.
+    It uses CFrame, raycasts, and tweens to make it work.
 ]]
 
 -- Service references
