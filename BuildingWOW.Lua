@@ -1,6 +1,12 @@
--- Advanced Fortnite-Style Building System
--- Demonstrates: CFrame math, raycasting, collision detection, input handling, tweening, and custom physics
+--[[
+	Advanced Building System
+	
+	This system allows players to place building pieces in the game world with real-time visual feedback.
+	It handles ghost preview rendering, collision detection, grid snapping, rotation controls, and server communication.
+	The system uses CFrame math for positioning, raycasting for placement detection, and tweening for smooth visual effects.
+]]
 
+-- Service references for Roblox API access
 local RS = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -8,32 +14,32 @@ local TweenService = game:GetService("TweenService")
 local Debris = game:GetService("Debris")
 local player = game.Players.LocalPlayer
 
--- Module references
+-- Module and remote references for build system configuration and server communication
 local BuildConfig = require(RS.BuildSystem.BuildConfig)
 local BuildPieces = RS:WaitForChild("BuildPieces")
 local PlaceBuildEvent = RS.BuildSystem.Remotes:WaitForChild("PlaceBuild")
 
--- State management
-local ghostPart = nil
-local currentPieceType = "Wall"
-local canPlaceHere = false
-local placing = false
-local buildMode = true
+-- State management variables that track current building status and settings
+local ghostPart = nil -- The transparent preview part shown to the player
+local currentPieceType = "Wall" -- Currently selected building piece type
+local canPlaceHere = false -- Whether the current ghost position is valid for placement
+local placing = false -- Cooldown flag to prevent spam placement
+local buildMode = true -- Whether build mode is currently active
 
--- Constants
-local MAX_BUILD_DISTANCE = 120
-local PLACE_COOLDOWN = 0.15
-local ROTATION_SPEED = math.pi / 2
-local currentRotation = 0
+-- Constants that define build system behavior and limits
+local MAX_BUILD_DISTANCE = 120 -- Maximum distance from camera to place pieces
+local PLACE_COOLDOWN = 0.15 -- Time in seconds between piece placements
+local ROTATION_SPEED = math.pi / 2 -- Rotation amount per key press (90 degrees)
+local currentRotation = 0 -- Current rotation angle of the ghost piece
 
--- Visual effects cache
+-- Visual effects cache - pre-configured highlight for ghost pieces to improve performance
 local highlightTemplate = Instance.new("Highlight")
 highlightTemplate.FillColor = Color3.fromRGB(0, 170, 255)
 highlightTemplate.OutlineColor = Color3.fromRGB(255, 255, 255)
 highlightTemplate.FillTransparency = 0.5
 highlightTemplate.OutlineTransparency = 0
 
--- Overlap params for collision detection (recreated each check to update filter list)
+-- Creates overlap parameters for collision detection, excluding player and ghost from checks
 local function createOverlapParams()
 	local params = OverlapParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
@@ -45,10 +51,11 @@ local function createOverlapParams()
 	return params
 end
 
--- Metatable for piece data tracking
+-- Metatable for tracking individual piece data including health, placement time, and position
 local PieceData = {}
 PieceData.__index = PieceData
 
+-- Constructor that creates a new piece data object with initial health and timestamp
 function PieceData.new(pieceType, cframe)
 	local self = setmetatable({}, PieceData)
 	self.Type = pieceType
@@ -58,11 +65,13 @@ function PieceData.new(pieceType, cframe)
 	return self
 end
 
+-- Returns how long this piece has existed in seconds
 function PieceData:GetAge()
 	return tick() - self.PlacedTime
 end
 
--- Advanced raycast with multiple filter options
+-- Performs a raycast from origin in direction while filtering out specified instances
+-- This is used to detect where the player is aiming and what surfaces exist
 local function performRaycast(origin, direction, filterList)
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
@@ -74,7 +83,8 @@ local function performRaycast(origin, direction, filterList)
 	return result
 end
 
--- Get center screen raycast
+-- Casts a ray from the center of the screen to find where the player is looking
+-- Returns the world position of the raycast hit or nil if nothing was hit
 local function getMouseRay()
 	local cam = workspace.CurrentCamera
 	local vpSize = cam.ViewportSize
@@ -92,7 +102,7 @@ local function getMouseRay()
 	return result and result.Position or nil
 end
 
--- Grid snapping with configurable precision
+-- Snaps a position to the nearest grid point for aligned building placement
 local function snapToGrid(pos, gridSize)
 	gridSize = gridSize or BuildConfig.GridSize
 	return Vector3.new(
@@ -102,7 +112,8 @@ local function snapToGrid(pos, gridSize)
 	)
 end
 
--- Calculate surface normal alignment using CFrame math
+-- Calculates a CFrame aligned to a surface normal using cross products
+-- This allows pieces to be placed flush against angled surfaces
 local function alignToSurface(position, normal)
 	local upVector = Vector3.new(0, 1, 0)
 	local rightVector = normal:Cross(upVector)
@@ -117,14 +128,15 @@ local function alignToSurface(position, normal)
 	return CFrame.fromMatrix(position, rightVector, normal, -forwardVector)
 end
 
--- Check if position is within build range using magnitude
+-- Checks if a position is within maximum build distance from the camera
 local function isInBuildRange(position)
 	local camPos = workspace.CurrentCamera.CFrame.Position
 	local distance = (position - camPos).Magnitude
 	return distance <= MAX_BUILD_DISTANCE
 end
 
--- Advanced collision detection with region optimization
+-- Checks if the ghost part overlaps with any solid collidable parts in the workspace
+-- Returns true if collision is detected, preventing placement at that location
 local function checkCollision(part)
 	local params = createOverlapParams()
 	local touchingParts = workspace:GetPartsInPart(part, params)
@@ -138,14 +150,14 @@ local function checkCollision(part)
 	return false
 end
 
--- Create visual highlight effect
+-- Clones and attaches a highlight effect to a part for visual feedback
 local function createHighlight(part)
 	local highlight = highlightTemplate:Clone()
 	highlight.Parent = part
 	return highlight
 end
 
--- Tween ghost transparency for visual feedback
+-- Smoothly animates the ghost part's transparency using TweenService for visual feedback
 local function tweenGhostFeedback(transparency, duration)
 	if not ghostPart then return end
 
@@ -160,7 +172,7 @@ local function tweenGhostFeedback(transparency, duration)
 	tween:Play()
 end
 
--- Play placement sound with variation
+-- Creates a temporary 3D sound at the placement position with random pitch variation
 local function playPlacementSound(position)
 	local soundPart = Instance.new("Part")
 	soundPart.Anchored = true
@@ -180,7 +192,8 @@ local function playPlacementSound(position)
 	Debris:AddItem(soundPart, 2)
 end
 
--- Create ghost with advanced properties
+-- Creates a new ghost preview part based on the current piece type
+-- The ghost is semi-transparent and shows where the piece will be placed
 local function createGhost()
 	if ghostPart then 
 		ghostPart:Destroy()
@@ -212,7 +225,8 @@ local function createGhost()
 	ghostPart.Parent = workspace
 end
 
--- Calculate camera-relative rotation using CFrame math
+-- Calculates a CFrame rotated relative to the camera's horizontal direction
+-- This makes pieces face away from the camera when placed, feeling more natural
 local function getCameraRelativeRotation(basePosition, lookDirection)
 	local flatLook = Vector3.new(lookDirection.X, 0, lookDirection.Z)
 
@@ -228,13 +242,14 @@ local function getCameraRelativeRotation(basePosition, lookDirection)
 	return baseCFrame * rotationCFrame
 end
 
--- Handle piece rotation
+-- Rotates the current piece by 90 degrees in the specified direction (1 or -1)
 local function rotatePiece(direction)
 	currentRotation = currentRotation + (direction * ROTATION_SPEED)
 	currentRotation = currentRotation % (math.pi * 2)
 end
 
--- Request build placement with validation
+-- Sends a placement request to the server after validating the ghost position
+-- Includes cooldown handling and visual/audio feedback for the placement
 local function requestPlace()
 	if placing or not ghostPart or not canPlaceHere then return end
 
@@ -255,7 +270,7 @@ local function requestPlace()
 	end)
 end
 
--- Switch piece type with validation
+-- Changes the current piece type and recreates the ghost with the new model
 local function setPieceType(pieceType)
 	if currentPieceType == pieceType then return end
 
@@ -270,7 +285,7 @@ local function setPieceType(pieceType)
 	createGhost()
 end
 
--- Toggle build mode
+-- Toggles build mode on/off, showing or hiding the ghost preview part
 local function toggleBuildMode()
 	buildMode = not buildMode
 
@@ -284,10 +299,11 @@ local function toggleBuildMode()
 	end
 end
 
--- Initialize system
+-- Initialize the system by creating the initial ghost part
 createGhost()
 
--- Main render loop with CFrame calculations
+-- Main render loop that updates ghost position and visual state every frame
+-- Handles raycast positioning, grid snapping, rotation, range checking, and collision validation
 RunService.RenderStepped:Connect(function()
 	if not ghostPart or not buildMode then return end
 
@@ -296,13 +312,16 @@ RunService.RenderStepped:Connect(function()
 
 	local snappedPos = snapToGrid(hitPos)
 
+	-- Prevent pieces from going below ground level
 	if snappedPos.Y < 0.5 then
 		snappedPos = Vector3.new(snappedPos.X, 0.5, snappedPos.Z)
 	end
 
+	-- Adjust position by half the piece height so it sits on the surface
 	local halfHeight = ghostPart.Size.Y / 2
 	local adjustedPos = Vector3.new(snappedPos.X, snappedPos.Y + halfHeight, snappedPos.Z)
 
+	-- Check if position is within build range and show orange if too far
 	if not isInBuildRange(adjustedPos) then
 		ghostPart.Position = adjustedPos
 		ghostPart.Color = Color3.fromRGB(255, 165, 0)
@@ -318,6 +337,7 @@ RunService.RenderStepped:Connect(function()
 	local cam = workspace.CurrentCamera
 	local lookDir = cam.CFrame.LookVector
 
+	-- Apply piece-specific rotation logic based on type
 	if currentPieceType == "Floor" then
 		ghostPart.CFrame = CFrame.new(adjustedPos) * CFrame.Angles(0, currentRotation, 0)
 	elseif currentPieceType == "Ramp" then
@@ -327,6 +347,7 @@ RunService.RenderStepped:Connect(function()
 		ghostPart.CFrame = getCameraRelativeRotation(adjustedPos, lookDir)
 	end
 
+	-- Update ghost color based on collision: red if blocked, blue if valid
 	local isColliding = checkCollision(ghostPart)
 	local highlight = ghostPart:FindFirstChildOfClass("Highlight")
 
@@ -345,7 +366,8 @@ RunService.RenderStepped:Connect(function()
 	end
 end)
 
--- Input handling with multiple control schemes
+-- Input handling for piece selection, rotation, build mode toggle, and placement
+-- Q=Wall, V=Floor, R=Ramp, E/T=Rotate, B=Toggle build mode, Left Click=Place
 UIS.InputBegan:Connect(function(input, gpe)
 	if gpe then return end
 
@@ -368,7 +390,7 @@ UIS.InputBegan:Connect(function(input, gpe)
 	end
 end)
 
--- Cleanup on character respawn
+-- Cleanup and reinitialize ghost when player respawns
 player.CharacterAdded:Connect(function()
 	if ghostPart then
 		ghostPart:Destroy()
