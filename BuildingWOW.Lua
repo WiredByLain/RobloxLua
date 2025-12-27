@@ -1,12 +1,12 @@
 --[[
 	Advanced Building System
 	
-	This system allows players to place building pieces in the game world with real-time visual feedback.
-	It handles ghost preview rendering, collision detection, grid snapping, rotation controls, and server communication.
-	The system uses CFrame math for positioning, raycasting for placement detection, and tweening for smooth visual effects.
+	This system lets players place building pieces with a live preview.
+    It snaps to a grid, checks collisions, supports rotation, and sends updates to the server.
+    It uses CFrame, raycasts, and tweens to make it all work.
 ]]
 
--- Service references for Roblox API access
+-- Service references
 local RS = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -14,7 +14,7 @@ local TweenService = game:GetService("TweenService")
 local Debris = game:GetService("Debris")
 local player = game.Players.LocalPlayer
 
--- Module and remote references for build system configuration and server communication
+-- Module and remote references
 local BuildConfig = require(RS.BuildSystem.BuildConfig)
 local BuildPieces = RS:WaitForChild("BuildPieces")
 local PlaceBuildEvent = RS.BuildSystem.Remotes:WaitForChild("PlaceBuild")
@@ -26,20 +26,20 @@ local canPlaceHere = false -- Whether the current ghost position is valid for pl
 local placing = false -- Cooldown flag to prevent spam placement
 local buildMode = true -- Whether build mode is currently active
 
--- Constants that define build system behavior and limits
+-- Constants that define build system behavior
 local MAX_BUILD_DISTANCE = 120 -- Maximum distance from camera to place pieces
 local PLACE_COOLDOWN = 0.15 -- Time in seconds between piece placements
 local ROTATION_SPEED = math.pi / 2 -- Rotation amount per key press (90 degrees)
 local currentRotation = 0 -- Current rotation angle of the ghost piece
 
--- Visual effects cache - pre-configured highlight for ghost pieces to improve performance
+-- Visual effects cache 
 local highlightTemplate = Instance.new("Highlight")
 highlightTemplate.FillColor = Color3.fromRGB(0, 170, 255)
 highlightTemplate.OutlineColor = Color3.fromRGB(255, 255, 255)
 highlightTemplate.FillTransparency = 0.5
 highlightTemplate.OutlineTransparency = 0
 
--- Creates overlap parameters for collision detection, excluding player and ghost from checks
+-- Overlap params for collision ignores player and ghost
 local function createOverlapParams()
 	local params = OverlapParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
@@ -51,7 +51,7 @@ local function createOverlapParams()
 	return params
 end
 
--- Metatable for tracking individual piece data including health, placement time, and position
+-- Metatable for storing each piece's health, time placed, and position
 local PieceData = {}
 PieceData.__index = PieceData
 
@@ -403,3 +403,6 @@ player.CharacterAdded:Connect(function()
 		createGhost()
 	end
 end)
+
+
+-- is this enough comments 
