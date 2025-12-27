@@ -157,7 +157,7 @@ local function createHighlight(part)
 	return highlight
 end
 
--- Smoothly animates the ghost part's transparency using TweenService for visual feedback
+-- animates the ghost part's transparency using TweenService for visual feedback
 local function tweenGhostFeedback(transparency, duration)
 	if not ghostPart then return end
 
@@ -172,7 +172,7 @@ local function tweenGhostFeedback(transparency, duration)
 	tween:Play()
 end
 
--- Creates a temporary 3D sound at the placement position with random pitch variation
+-- Creates a temporary sound at the placement position with random pitch
 local function playPlacementSound(position)
 	local soundPart = Instance.new("Part")
 	soundPart.Anchored = true
@@ -192,7 +192,7 @@ local function playPlacementSound(position)
 	Debris:AddItem(soundPart, 2)
 end
 
--- Creates a new ghost preview part based on the current piece type
+-- Creates a new ghost preview part based on the current piece
 -- The ghost is semi-transparent and shows where the piece will be placed
 local function createGhost()
 	if ghostPart then 
@@ -225,7 +225,7 @@ local function createGhost()
 	ghostPart.Parent = workspace
 end
 
--- Calculates a CFrame rotated relative to the camera's horizontal direction
+-- Calculates a CFrame rotated relative to the camera's direction
 -- This makes pieces face away from the camera when placed, feeling more natural
 local function getCameraRelativeRotation(basePosition, lookDirection)
 	local flatLook = Vector3.new(lookDirection.X, 0, lookDirection.Z)
@@ -242,14 +242,14 @@ local function getCameraRelativeRotation(basePosition, lookDirection)
 	return baseCFrame * rotationCFrame
 end
 
--- Rotates the current piece by 90 degrees in the specified direction (1 or -1)
+-- Rotates the current piece by 90 degrees in the specified direction
 local function rotatePiece(direction)
 	currentRotation = currentRotation + (direction * ROTATION_SPEED)
 	currentRotation = currentRotation % (math.pi * 2)
 end
 
 -- Sends a placement request to the server after validating the ghost position
--- Includes cooldown handling and visual/audio feedback for the placement
+-- Includes cooldown handling and feedback for the placement
 local function requestPlace()
 	if placing or not ghostPart or not canPlaceHere then return end
 
@@ -285,7 +285,7 @@ local function setPieceType(pieceType)
 	createGhost()
 end
 
--- Toggles build mode on/off, showing or hiding the ghost preview part
+-- Toggles build mode on/off
 local function toggleBuildMode()
 	buildMode = not buildMode
 
@@ -347,7 +347,7 @@ RunService.RenderStepped:Connect(function()
 		ghostPart.CFrame = getCameraRelativeRotation(adjustedPos, lookDir)
 	end
 
-	-- Update ghost color based on collision: red if blocked, blue if valid
+	-- Update ghost color based on collision
 	local isColliding = checkCollision(ghostPart)
 	local highlight = ghostPart:FindFirstChildOfClass("Highlight")
 
